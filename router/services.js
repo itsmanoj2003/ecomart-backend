@@ -238,27 +238,6 @@ const OrderSchema = new mongoose.Schema({
 
 const Order = mongoose.model("Order", OrderSchema);
 
-// router.post("/order", async (req, res) => {
-//     try {
-//         const { name, mobile, address, items, total } = req.body;
-
-//         const newOrder = new Order({
-//             name,
-//             mobile,
-//             address,
-//             items,
-//             total
-//         });
-
-//         await newOrder.save();
-//         res.status(201).json({ message: "Order Placed Successfully!", order: newOrder });
-//     } catch (error) {
-//         res.status(500).json({ error: "Internal Server Error" });
-//     }
-// });
-
-const nodemailer = require('nodemailer');
-
 router.post("/order", async (req, res) => {
     try {
         const { name, mobile, address, items, total } = req.body;
@@ -272,42 +251,7 @@ router.post("/order", async (req, res) => {
         });
 
         await newOrder.save();
-
-        // ✅ Send email using Brevo SMTP
-        const transporter = nodemailer.createTransport({
-            host: 'smtp-relay.brevo.com',
-            port: 587,
-            auth: {
-                user: '8a4b0d001@smtp-brevo.com',
-                pass: 'FtO5Zk8hn14xyJmj',
-            }
-        });
-
-        const mailOptions = {
-            from: '8a4b0d001@smtp-brevo.com',
-            to: 'manojprabhakaran524@gmail.com', // 🔁 replace with your email or use req.body.email if you collect it
-            subject: 'EcoMart Order Confirmation ✅',
-            html: `
-                <h2>EcoMart 🛒 - Order Confirmation</h2>
-                <p><strong>Name:</strong> ${name}</p>
-                <p><strong>Mobile:</strong> ${mobile}</p>
-                <p><strong>Address:</strong> ${address}</p>
-                <p><strong>Total Amount:</strong> Rs.${total}</p>
-                <hr />
-                <p>Thanks for shopping with us! 😊</p>
-            `
-        };
-
-        transporter.sendMail(mailOptions, (err, info) => {
-            if (err) {
-                console.log("❌ Email sending failed:", err);
-            } else {
-                console.log("✅ Email sent:", info.response);
-            }
-        });
-
         res.status(201).json({ message: "Order Placed Successfully!", order: newOrder });
-
     } catch (error) {
         res.status(500).json({ error: "Internal Server Error" });
     }
