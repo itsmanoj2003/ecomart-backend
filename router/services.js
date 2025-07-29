@@ -156,13 +156,20 @@ const OrderSchema = new mongoose.Schema({
   deliveredBy: { type: String, default: '' }
 });
 
-const Order = mongoose.model('Order', OrderSchema);
+const Order = mongoose.model('orders', OrderSchema);
 
 // Place Order
 router.post('/order', async (req, res) => {
   try {
     const { name, mobile, address, items, total } = req.body;
-    const newOrder = new Order({ name, mobile, address, items, total });
+
+    const newOrder = new Order({
+      name,
+      mobile,
+      address,
+      items,
+      total
+    });
 
     await newOrder.save();
     res.status(201).json({ message: 'Order Placed Successfully!', order: newOrder });
