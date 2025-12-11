@@ -139,18 +139,21 @@ router.delete('/delete/:id', async (req, res) => {
 
 // Orders Schema
 const OrderSchema = new mongoose.Schema({
-  name: String,
-  mobile: String,
-  address: String,
+  name: { type: String, required: true },
+  mobile: { type: String, required: true },
+  address: { type: String, required: true },
+  paymentMode: { type: String, enum: ['cod', 'gpay', 'online'], required: true },
+  paymentId: { type: String, default: '' }, // optional transaction id
+  city: { type: String, required: true },
   items: [
     {
-      pname: String,
-      pprice: Number,
-      quantity: Number,
-      subtotal: Number
+      pname: { type: String, required: true },
+      pprice: { type: Number, required: true },
+      quantity: { type: Number, required: true },
+      subtotal: { type: Number, required: true }
     }
   ],
-  total: Number,
+  total: { type: Number, required: true },
   date: { type: Date, default: Date.now },
   status: { type: String, default: 'Pending' },
   deliveredBy: { type: String, default: '' }
@@ -161,22 +164,46 @@ const Order = mongoose.model('orders', OrderSchema);
 // Place Order
 router.post('/order', async (req, res) => {
   try {
-    const { name, mobile, address, items, total } = req.body;
+    // LOG raw body for debugging
+    console.log('Order POST received - raw body:', req.body);
+
+    // Destructure everything we expect
+    const { name, mobile, address, paymentMode, paymentId, city, items, total } = req.body;
+
+    // Basic server-side validation
+    if (!name || !mobile || !address || !paymentMode || !city || !items || !total) {
+      return res.status(400).json({ message: 'Missing required fields. name, mobile, address, paymentMode, city, items, total are required.' });
+    }
+
+    // If online payment, require paymentId
+    if ((paymentMode === 'gpay' || paymentMode === 'online') && !paymentId) {
+      return res.status(400).json({ message: 'paymentId (transaction id) is required for online payments.' });
+    }
+
+    // Optional: ensure items is an array and has >=1 item
+    if (!Array.isArray(items) || items.length === 0) {
+      return res.status(400).json({ message: 'items must be a non-empty array.' });
+    }
 
     const newOrder = new Order({
       name,
       mobile,
       address,
+      paymentMode,
+      paymentId: paymentId || '',
+      city,
       items,
       total
     });
 
-    await newOrder.save();
-    res.status(201).json({ message: 'Order Placed Successfully!', order: newOrder });
+    const saved = await newOrder.save();
+    res.status(201).json({ message: 'Order Placed Successfully!', order: saved });
   } catch (error) {
+    console.error('Order POST error:', error);
     res.status(500).json({ message: 'Internal Server Error', error });
   }
 });
+
 
 // Get Orders
 router.get('/getorders', async (req, res) => {
@@ -255,6 +282,26 @@ router.get('/getoffers', async (req, res) => {
     res.status(500).json({ message: 'Error fetching offers', error });
   }
 });
+
+// Update Offer (add to router/services.js)
+router.put('/updateoffer/:id', async (req, res) => {
+  try {
+    console.log('PUT /updateoffer/:id - id:', req.params.id, 'body:', req.body);
+    const offerId = req.params.id;
+
+    // optional: validate body here
+
+    const updated = await Offer.findByIdAndUpdate(offerId, req.body, { new: true, runValidators: true });
+    if (!updated) {
+      return res.status(404).json({ message: 'Offer not found' });
+    }
+    res.status(200).json({ message: 'Offer updated', offer: updated });
+  } catch (error) {
+    console.error('updateoffer error:', error);
+    res.status(500).json({ message: 'Update failed', error });
+  }
+});
+
 
 // Delete Offer
 router.delete('/deleteoffer/:id', async (req, res) => {
