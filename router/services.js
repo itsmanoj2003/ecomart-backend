@@ -2,6 +2,7 @@ const express = require('express');
 const mongoose = require('mongoose');
 const bcrypt = require('bcryptjs');
 const router = express.Router();
+const nodemailer = require('nodemailer');
 
 // Signup Schema
 const AuthSchema = new mongoose.Schema({
@@ -58,7 +59,7 @@ router.post('/login', async (req, res) => {
   }
 });
 
-// Products Schema
+
 // Product Schema
 const ProductSchema = new mongoose.Schema({
   pcode: String,          // Product Code
@@ -189,30 +190,26 @@ const OrderSchema = new mongoose.Schema({
 const Order = mongoose.model('orders', OrderSchema);
 
 // Place Order
+const transporter = nodemailer.createTransport({
+  host: process.env.EMAIL_HOST,
+  port: process.env.EMAIL_PORT,
+  secure: true, // MUST be true for 465
+  auth: {
+    user: process.env.EMAIL_USER,
+    pass: process.env.EMAIL_PASS
+  }
+});
+
+/* ================= PLACE ORDER ROUTE ================= */
 router.post('/order', async (req, res) => {
   try {
-    // LOG raw body for debugging
-    console.log('Order POST received - raw body:', req.body);
-
-    // Destructure everything we expect
     const { name, mobile, address, paymentMode, paymentId, city, items, total } = req.body;
 
-    // Basic server-side validation
     if (!name || !mobile || !address || !paymentMode || !city || !items || !total) {
-      return res.status(400).json({ message: 'Missing required fields. name, mobile, address, paymentMode, city, items, total are required.' });
+      return res.status(400).json({ message: 'Missing fields' });
     }
 
-    // If online payment, require paymentId
-    if ((paymentMode === 'gpay' || paymentMode === 'online') && !paymentId) {
-      return res.status(400).json({ message: 'paymentId (transaction id) is required for online payments.' });
-    }
-
-    // Optional: ensure items is an array and has >=1 item
-    if (!Array.isArray(items) || items.length === 0) {
-      return res.status(400).json({ message: 'items must be a non-empty array.' });
-    }
-
-    const newOrder = new Order({
+    const order = new Order({
       name,
       mobile,
       address,
@@ -223,11 +220,43 @@ router.post('/order', async (req, res) => {
       total
     });
 
-    const saved = await newOrder.save();
-    res.status(201).json({ message: 'Order Placed Successfully!', order: saved });
+    const savedOrder = await order.save();
+
+    /* ===== EMAIL CONTENT ===== */
+    const itemList = items
+      .map(i => `${i.pname} × ${i.quantity} = ₹${i.subtotal}`)
+      .join('\n');
+
+    const mailOptions = {
+      from: `"EcoMart Orders" <${process.env.EMAIL_USER}>`,
+      to: process.env.EMAIL_USER, // forwarder sends to Gmail
+      subject: '🛒 New Order Received',
+      text: `
+New Order Placed
+
+Name: ${name}
+Mobile: ${mobile}
+City: ${city}
+Address: ${address}
+
+Items:
+${itemList}
+
+Total: ₹${total}
+Payment Mode: ${paymentMode}
+      `
+    };
+
+    await transporter.sendMail(mailOptions);
+
+    res.status(201).json({
+      message: 'Order placed & mail sent successfully',
+      order: savedOrder
+    });
+
   } catch (error) {
-    console.error('Order POST error:', error);
-    res.status(500).json({ message: 'Internal Server Error', error });
+    console.error('Order error:', error);
+    res.status(500).json({ message: 'Mail or Order failed', error });
   }
 });
 
