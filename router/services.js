@@ -59,7 +59,9 @@ router.post('/login', async (req, res) => {
 });
 
 // Products Schema
+// Product Schema
 const ProductSchema = new mongoose.Schema({
+  pcode: String,          // Product Code
   pname: String,
   pcategory: String,
   pprice: Number,
@@ -68,18 +70,43 @@ const ProductSchema = new mongoose.Schema({
   pimg: String,
 });
 
+// Product Model
 const ProductModel = mongoose.model('products', ProductSchema);
 
-// Add Products
+// Add Products API
 router.post('/addproduct', async (req, res) => {
   try {
-    const { pname, pcategory, pprice, pmrp, pquantity, pimg } = req.body;
+    const {
+      pcode,
+      pname,
+      pcategory,
+      pprice,
+      pmrp,
+      pquantity,
+      pimg
+    } = req.body;
 
-    const product = new ProductModel({ pname, pcategory, pprice, pmrp, pquantity, pimg });
+    const product = new ProductModel({
+      pcode,
+      pname,
+      pcategory,
+      pprice,
+      pmrp,
+      pquantity,
+      pimg
+    });
+
     await product.save();
-    res.status(200).json({ message: 'Product Added Successfully' });
+
+    res.status(200).json({
+      message: 'Product Added Successfully'
+    });
+
   } catch (err) {
-    res.status(409).json({ message: 'Product Not Added', err });
+    res.status(409).json({
+      message: 'Product Not Added',
+      error: err
+    });
   }
 });
 
