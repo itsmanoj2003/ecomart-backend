@@ -179,11 +179,20 @@ router.delete('/delete/:id', async (req, res) => {
   }
 });
 
-module.exports = router;
 
+
+/* ================= COUNTER SCHEMA (FOR BILL NUMBER) ================= */
+const CounterSchema = new mongoose.Schema({
+  name: { type: String, required: true, unique: true },
+  seq: { type: Number, default: 0 }
+});
+
+const Counter = mongoose.model('counters', CounterSchema);
 
 /* ================= ORDER SCHEMA ================= */
 const OrderSchema = new mongoose.Schema({
+  billNumber: { type: Number, required: true, unique: true }, // 🔥 GLOBAL BILL NO
+
   name: { type: String, required: true },
   mobile: { type: String, required: true },
   address: { type: String, required: true },
@@ -199,16 +208,16 @@ const OrderSchema = new mongoose.Schema({
 
   items: [
     {
-      itemname: { type: String, required: true }, // product name
-      price: { type: Number, required: true },    // net amount per item
+      itemname: { type: String, required: true },
+      price: { type: Number, required: true },
       quantity: { type: Number, required: true },
-      subtotal: { type: Number, required: true }  // price * quantity
+      subtotal: { type: Number, required: true }
     }
   ],
 
-  total: { type: Number, required: true },       // NET TOTAL
-  gstTotal: { type: Number, required: true },    // TOTAL GST (hidden from customer)
-  grandTotal: { type: Number, required: true },  // total + gstTotal
+  total: { type: Number, required: true },
+  gstTotal: { type: Number, required: true },
+  grandTotal: { type: Number, required: true },
 
   date: { type: Date, default: Date.now },
   status: { type: String, default: 'Pending' },
@@ -235,7 +244,7 @@ router.post('/order', async (req, res) => {
       grandTotal
     } = req.body;
 
-    /* BASIC VALIDATION */
+    /* ================= BASIC VALIDATION ================= */
     if (
       !name ||
       !mobile ||
@@ -249,25 +258,36 @@ router.post('/order', async (req, res) => {
     ) {
       return res.status(400).json({
         message:
-          'Missing required fields (name, mobile, address, paymentMode, city, items, total, gstTotal, grandTotal)'
+          'Missing required fields'
       });
     }
 
-    /* PAYMENT VALIDATION */
+    /* ================= PAYMENT VALIDATION ================= */
     if ((paymentMode === 'gpay' || paymentMode === 'online') && !paymentId) {
       return res.status(400).json({
         message: 'paymentId is required for online payments'
       });
     }
 
-    /* ITEMS VALIDATION */
+    /* ================= ITEMS VALIDATION ================= */
     if (!Array.isArray(items) || items.length === 0) {
       return res.status(400).json({
         message: 'items must be a non-empty array'
       });
     }
 
+    /* ================= BILL NUMBER GENERATION (GLOBAL) ================= */
+    const counter = await Counter.findOneAndUpdate(
+      { name: 'billNumber' },
+      { $inc: { seq: 1 } },
+      { new: true, upsert: true }
+    );
+
+    const billNumber = counter.seq; // 🔥 AUTO INCREMENT
+
+    /* ================= SAVE ORDER ================= */
     const newOrder = new Order({
+      billNumber,
       name,
       mobile,
       address,
@@ -282,8 +302,10 @@ router.post('/order', async (req, res) => {
 
     const savedOrder = await newOrder.save();
 
+    /* ================= RESPONSE ================= */
     res.status(201).json({
       message: 'Order Placed Successfully!',
+      billNumber,          // ✅ FRONTEND + PDF USE
       order: savedOrder
     });
 
@@ -295,8 +317,6 @@ router.post('/order', async (req, res) => {
     });
   }
 });
-
-module.exports = router;
 
 
 
