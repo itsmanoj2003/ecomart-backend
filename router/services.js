@@ -2,7 +2,6 @@ const express = require('express');
 const mongoose = require('mongoose');
 const bcrypt = require('bcryptjs');
 const router = express.Router();
-const nodemailer = require('nodemailer');
 
 // Signup Schema
 const AuthSchema = new mongoose.Schema({
@@ -60,58 +59,57 @@ router.post('/login', async (req, res) => {
 });
 
 
-// Product Schema
+/* ================= PRODUCT SCHEMA ================= */
 const ProductSchema = new mongoose.Schema({
-  pcode: String,          // Product Code
-  pname: String,
-  pcategory: String,
-  pprice: Number,
-  pmrp: Number,
-  pquantity: String,
-  pimg: String,
+  itemcode: { type: String, required: true },
+  itemid: { type: String },
+  itemname: { type: String, required: true },
+  qty: { type: String, required: true },
+  selling: { type: String, required: true },
+  mrp: { type: String, required: true },
+  amount: { type: String, required: true },
+  discperc: { type: String },
+  gstamt: { type: String, required: true },
+  discamt: { type: String },
+  gstperc: { type: String, required: true },
+  netamt: { type: String, required: true },
+  itemcategory:{ type: String, required: false },
+  itemimg: { type: String, required: false }
 });
 
-// Product Model
-const ProductModel = mongoose.model('products', ProductSchema);
+const ProductModel = mongoose.model('productsdata', ProductSchema);
 
-// Add Products API
-router.post('/addproduct', async (req, res) => {
+/* ================= ADD PRODUCT (SINGLE + BULK) ================= */
+router.post('/addpro', async (req, res) => {
   try {
-    const {
-      pcode,
-      pname,
-      pcategory,
-      pprice,
-      pmrp,
-      pquantity,
-      pimg
-    } = req.body;
+    // Always convert request body to array
+    const payload = Array.isArray(req.body) ? req.body : [req.body]
 
-    const product = new ProductModel({
-      pcode,
-      pname,
-      pcategory,
-      pprice,
-      pmrp,
-      pquantity,
-      pimg
-    });
+    // Remove empty objects (safety)
+    const cleanPayload = payload.filter(p => Object.keys(p).length > 0)
 
-    await product.save();
+    if (cleanPayload.length === 0) {
+      return res.status(400).json({ message: 'No product data provided' })
+    }
 
-    res.status(200).json({
-      message: 'Product Added Successfully'
-    });
+    // Insert single or multiple products
+    const products = await ProductModel.insertMany(cleanPayload)
+
+    res.status(201).json({
+      message: 'Product(s) Added Successfully',
+      count: products.length
+    })
 
   } catch (err) {
-    res.status(409).json({
+    res.status(500).json({
       message: 'Product Not Added',
       error: err
-    });
+    })
   }
-});
+})
 
-// Get Products based on Categories
+
+/* ================= GET PRODUCTS (GROUP BY CATEGORY) ================= */
 router.get('/getproddata', async (req, res) => {
   try {
     const searchQuery = req.query.search || '';
@@ -120,14 +118,15 @@ router.get('/getproddata', async (req, res) => {
       {
         $match: {
           $or: [
-            { pname: { $regex: searchQuery, $options: 'i' } },
-            { pcategory: { $regex: searchQuery, $options: 'i' } }
+            { itemname: { $regex: searchQuery, $options: 'i' } },
+            { itemcategory: { $regex: searchQuery, $options: 'i' } },
+            { itemcode: Number(searchQuery) || -1 }
           ]
         }
       },
       {
         $group: {
-          _id: '$pcategory',
+          _id: '$itemcategory',
           products: { $push: '$$ROOT' }
         }
       }
@@ -135,53 +134,82 @@ router.get('/getproddata', async (req, res) => {
 
     res.status(200).json(products);
   } catch (err) {
-    res.status(404).json({ message: 'Products Not Found', error: err });
+    res.status(404).json({
+      message: 'Products Not Found',
+      error: err
+    });
   }
 });
 
-// Update Product Data
+
+/* ================= UPDATE PRODUCT ================= */
 router.put('/updateproddata/:id', async (req, res) => {
   try {
-    const updatedProduct = await ProductModel.findByIdAndUpdate(req.params.id, req.body, { new: true });
+    const updatedProduct = await ProductModel.findByIdAndUpdate(
+      req.params.id,
+      req.body,
+      { new: true }
+    );
+
     if (!updatedProduct) {
       return res.status(404).json({ message: 'Product Not Found' });
     }
-    res.status(200).json({ message: 'Updated Successfully', updatedProduct });
+
+    res.status(200).json({
+      message: 'Updated Successfully',
+      updatedProduct
+    });
   } catch (err) {
-    res.status(500).json({ message: 'Update Failed', err });
+    res.status(500).json({ message: 'Update Failed', error: err });
   }
 });
 
-// Delete Product
+/* ================= DELETE PRODUCT ================= */
 router.delete('/delete/:id', async (req, res) => {
   try {
     const deletedProduct = await ProductModel.findByIdAndDelete(req.params.id);
+
     if (!deletedProduct) {
       return res.status(404).json({ message: 'Product Not Found' });
     }
+
     res.status(200).json({ message: 'Deleted Successfully' });
   } catch (err) {
-    res.status(500).json({ message: 'Delete Failed', err });
+    res.status(500).json({ message: 'Delete Failed', error: err });
   }
 });
 
-// Orders Schema
+module.exports = router;
+
+
+/* ================= ORDER SCHEMA ================= */
 const OrderSchema = new mongoose.Schema({
   name: { type: String, required: true },
   mobile: { type: String, required: true },
   address: { type: String, required: true },
-  paymentMode: { type: String, enum: ['cod', 'gpay', 'online'], required: true },
-  paymentId: { type: String, default: '' }, // optional transaction id
+
+  paymentMode: {
+    type: String,
+    enum: ['cod', 'gpay', 'online'],
+    required: true
+  },
+
+  paymentId: { type: String, default: '' },
   city: { type: String, required: true },
+
   items: [
     {
-      pname: { type: String, required: true },
-      pprice: { type: Number, required: true },
+      itemname: { type: String, required: true }, // product name
+      price: { type: Number, required: true },    // net amount per item
       quantity: { type: Number, required: true },
-      subtotal: { type: Number, required: true }
+      subtotal: { type: Number, required: true }  // price * quantity
     }
   ],
-  total: { type: Number, required: true },
+
+  total: { type: Number, required: true },       // NET TOTAL
+  gstTotal: { type: Number, required: true },    // TOTAL GST (hidden from customer)
+  grandTotal: { type: Number, required: true },  // total + gstTotal
+
   date: { type: Date, default: Date.now },
   status: { type: String, default: 'Pending' },
   deliveredBy: { type: String, default: '' }
@@ -189,27 +217,57 @@ const OrderSchema = new mongoose.Schema({
 
 const Order = mongoose.model('orders', OrderSchema);
 
-// Place Order
-const transporter = nodemailer.createTransport({
-  host: process.env.EMAIL_HOST,
-  port: process.env.EMAIL_PORT,
-  secure: false, // MUST be true for 465
-  auth: {
-    user: process.env.EMAIL_USER,
-    pass: process.env.EMAIL_PASS
-  }
-});
-
 /* ================= PLACE ORDER ROUTE ================= */
 router.post('/order', async (req, res) => {
   try {
-    const { name, mobile, address, paymentMode, paymentId, city, items, total } = req.body;
+    console.log('Order POST received:', req.body);
 
-    if (!name || !mobile || !address || !paymentMode || !city || !items || !total) {
-      return res.status(400).json({ message: 'Missing fields' });
+    const {
+      name,
+      mobile,
+      address,
+      paymentMode,
+      paymentId,
+      city,
+      items,
+      total,
+      gstTotal,
+      grandTotal
+    } = req.body;
+
+    /* BASIC VALIDATION */
+    if (
+      !name ||
+      !mobile ||
+      !address ||
+      !paymentMode ||
+      !city ||
+      !items ||
+      total === undefined ||
+      gstTotal === undefined ||
+      grandTotal === undefined
+    ) {
+      return res.status(400).json({
+        message:
+          'Missing required fields (name, mobile, address, paymentMode, city, items, total, gstTotal, grandTotal)'
+      });
     }
 
-    const order = new Order({
+    /* PAYMENT VALIDATION */
+    if ((paymentMode === 'gpay' || paymentMode === 'online') && !paymentId) {
+      return res.status(400).json({
+        message: 'paymentId is required for online payments'
+      });
+    }
+
+    /* ITEMS VALIDATION */
+    if (!Array.isArray(items) || items.length === 0) {
+      return res.status(400).json({
+        message: 'items must be a non-empty array'
+      });
+    }
+
+    const newOrder = new Order({
       name,
       mobile,
       address,
@@ -217,48 +275,29 @@ router.post('/order', async (req, res) => {
       paymentId: paymentId || '',
       city,
       items,
-      total
+      total,
+      gstTotal,
+      grandTotal
     });
 
-    const savedOrder = await order.save();
-
-    /* ===== EMAIL CONTENT ===== */
-    const itemList = items
-      .map(i => `${i.pname} × ${i.quantity} = ₹${i.subtotal}`)
-      .join('\n');
-
-    const mailOptions = {
-      from: `"EcoMart Orders" <${process.env.EMAIL_USER}>`,
-      to: process.env.EMAIL_USER, // forwarder sends to Gmail
-      subject: '🛒 New Order Received',
-      text: `
-New Order Placed
-
-Name: ${name}
-Mobile: ${mobile}
-City: ${city}
-Address: ${address}
-
-Items:
-${itemList}
-
-Total: ₹${total}
-Payment Mode: ${paymentMode}
-      `
-    };
-
-    await transporter.sendMail(mailOptions);
+    const savedOrder = await newOrder.save();
 
     res.status(201).json({
-      message: 'Order placed & mail sent successfully',
+      message: 'Order Placed Successfully!',
       order: savedOrder
     });
 
   } catch (error) {
-    console.error('Order error:', error);
-    res.status(500).json({ message: 'Mail or Order failed', error });
+    console.error('Order POST error:', error);
+    res.status(500).json({
+      message: 'Internal Server Error',
+      error
+    });
   }
 });
+
+module.exports = router;
+
 
 
 // Get Orders
