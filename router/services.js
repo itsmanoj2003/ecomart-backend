@@ -113,29 +113,39 @@ router.post('/addpro', async (req, res) => {
 router.get('/getproddata', async (req, res) => {
   try {
     const searchQuery = req.query.search || '';
+    const page = parseInt(req.query.page) || 1;
+    const limit = 20;
+    const skip = (page - 1) * limit;
+
+    const matchStage = {
+      $match: {
+        $or: [
+          { itemname: { $regex: searchQuery, $options: 'i' } },
+          { itemcategory: { $regex: searchQuery, $options: 'i' } },
+          { itemcode: Number(searchQuery) || -1 }
+        ]
+      }
+    };
 
     const products = await ProductModel.aggregate([
-      {
-        $match: {
-          $or: [
-            { itemname: { $regex: searchQuery, $options: 'i' } },
-            { itemcategory: { $regex: searchQuery, $options: 'i' } },
-            { itemcode: Number(searchQuery) || -1 }
-          ]
-        }
-      },
+      matchStage,
+      { $sort: { itemcategory: 1 } },   // category order stable
+      { $skip: skip },                  // pagination start
+      { $limit: limit },                // only 20 docs
       {
         $group: {
-          _id: '$itemcategory',
-          products: { $push: '$$ROOT' }
+          _id: "$itemcategory",
+          products: { $push: "$$ROOT" }
         }
       }
     ]);
 
     res.status(200).json(products);
+
   } catch (err) {
-    res.status(404).json({
-      message: 'Products Not Found',
+    console.error(err);
+    res.status(500).json({
+      message: "Products Not Found",
       error: err
     });
   }
