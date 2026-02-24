@@ -122,7 +122,7 @@ router.get('/getproddata', async (req, res) => {
         $or: [
           { itemname: { $regex: searchQuery, $options: 'i' } },
           { itemcategory: { $regex: searchQuery, $options: 'i' } },
-          { itemcode: Number(searchQuery) || -1 }
+          { itemcode: { $regex: searchQuery, $options: 'i' } }
         ]
       }
     };
