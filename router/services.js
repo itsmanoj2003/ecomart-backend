@@ -152,6 +152,39 @@ router.get('/getproddata', async (req, res) => {
 });
 
 
+
+
+// Get admin prod data
+router.get('/adminproducts', async (req, res) => {
+  try {
+    const products = await ProductModel
+      .find({})
+      .sort({ itemcategory: 1 })
+      .lean()
+
+    // Manual lightweight grouping (faster than aggregation)
+    const grouped = {}
+
+    products.forEach(prod => {
+      if (!grouped[prod.itemcategory]) {
+        grouped[prod.itemcategory] = []
+      }
+      grouped[prod.itemcategory].push(prod)
+    })
+
+    const result = Object.keys(grouped).map(cat => ({
+      _id: cat,
+      products: grouped[cat]
+    }))
+
+    res.json(result)
+
+  } catch (err) {
+    res.status(500).json({ message: "Error fetching products" })
+  }
+})
+
+
 /* ================= UPDATE PRODUCT ================= */
 router.put('/updateproddata/:id', async (req, res) => {
   try {
