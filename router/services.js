@@ -157,12 +157,24 @@ router.get('/getproddata', async (req, res) => {
 // Get admin prod data
 router.get('/adminproducts', async (req, res) => {
   try {
+    const search = (req.query.search || '').trim()
+
+    let query = {}
+
+    if (search) {
+      query = {
+        $or: [
+          { itemname: { $regex: search, $options: 'i' } },
+          { itemcategory: { $regex: search, $options: 'i' } }
+        ]
+      }
+    }
+
     const products = await ProductModel
-      .find({})
+      .find(query)
       .sort({ itemcategory: 1 })
       .lean()
 
-    // Manual lightweight grouping (faster than aggregation)
     const grouped = {}
 
     products.forEach(prod => {
