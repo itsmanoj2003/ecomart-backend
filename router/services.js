@@ -112,35 +112,45 @@ router.post('/addpro', async (req, res) => {
 /* ================= GET PRODUCTS (GROUP BY CATEGORY) ================= */
 router.get('/getproddata', async (req, res) => {
   try {
+
     const searchQuery = req.query.search || '';
     const page = parseInt(req.query.page) || 1;
     const limit = 20;
     const skip = (page - 1) * limit;
 
-    const matchStage = {
-      $match: {
-        $or: [
-          { itemname: { $regex: searchQuery, $options: 'i' } },
-          { itemcategory: { $regex: searchQuery, $options: 'i' } },
-          { itemcode: { $regex: searchQuery, $options: 'i' } }
-        ]
-      }
+    const matchQuery = {
+      $or: [
+        { itemname: { $regex: searchQuery, $options: 'i' } },
+        { itemcategory: { $regex: searchQuery, $options: 'i' } },
+        { itemcode: { $regex: searchQuery, $options: 'i' } }
+      ]
     };
 
-    const products = await ProductModel.aggregate([
-      matchStage,
-      { $sort: { itemcategory: 1 } },   // category order stable
-      { $skip: skip },                  // pagination start
-      { $limit: limit },                // only 20 docs
-      {
-        $group: {
-          _id: "$itemcategory",
-          products: { $push: "$$ROOT" }
-        }
-      }
-    ]);
+    // 🔥 STEP 1: Get all matching products sorted
+    const allProducts = await ProductModel
+      .find(matchQuery)
+      .sort({ itemcategory: 1 })
+      .lean();
 
-    res.status(200).json(products);
+    // 🔥 STEP 2: Apply pagination manually
+    const paginatedProducts = allProducts.slice(skip, skip + limit);
+
+    // 🔥 STEP 3: Group AFTER pagination
+    const grouped = {};
+
+    paginatedProducts.forEach(prod => {
+      if (!grouped[prod.itemcategory]) {
+        grouped[prod.itemcategory] = [];
+      }
+      grouped[prod.itemcategory].push(prod);
+    });
+
+    const result = Object.keys(grouped).map(cat => ({
+      _id: cat,
+      products: grouped[cat]
+    }));
+
+    res.status(200).json(result);
 
   } catch (err) {
     console.error(err);
