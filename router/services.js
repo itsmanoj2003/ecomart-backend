@@ -2,6 +2,8 @@ const express = require('express');
 const mongoose = require('mongoose');
 const bcrypt = require('bcryptjs');
 const router = express.Router();
+const nodemailer = require("nodemailer");
+
 
 // Signup Schema
 const AuthSchema = new mongoose.Schema({
@@ -107,6 +109,48 @@ router.post('/addpro', async (req, res) => {
     })
   }
 })
+
+
+
+
+
+
+
+// For Ecomart Tool
+router.post("/products-sync", async (req, res) => {
+  try {
+
+    const products = req.body.products;
+
+    const operations = products.map((p) => ({
+      updateOne: {
+        filter: { itemcode: p.itemcode }, // same product check
+        update: { $set: p },
+        upsert: true // new product insert
+      }
+    }));
+
+    const result = await ProductModel.bulkWrite(operations);
+
+    res.json({
+      message: "Products synced",
+      inserted: result.upsertedCount,
+      updated: result.modifiedCount
+    });
+
+  } catch (err) {
+    res.status(500).json(err);
+  }
+});
+
+
+
+
+
+
+
+
+
 
 
 /* ================= GET PRODUCTS (GROUP BY CATEGORY) ================= */
@@ -291,10 +335,20 @@ const OrderSchema = new mongoose.Schema({
 
 const Order = mongoose.model('orders', OrderSchema);
 
-/* ================= PLACE ORDER ROUTE ================= */
+/* ================= EMAIL TRANSPORT ================= */
+
+const transporter = nodemailer.createTransport({
+  host: process.env.EMAIL_HOST,
+  port: process.env.EMAIL_PORT,
+  secure: true,
+  auth: {
+    user: process.env.EMAIL_USER,
+    pass: process.env.EMAIL_PASS
+  }
+});
+
 router.post('/order', async (req, res) => {
   try {
-    console.log('Order POST received:', req.body);
 
     const {
       name,
@@ -309,7 +363,8 @@ router.post('/order', async (req, res) => {
       grandTotal
     } = req.body;
 
-    /* ================= BASIC VALIDATION ================= */
+    /* ================= VALIDATION ================= */
+
     if (
       !name ||
       !mobile ||
@@ -322,35 +377,34 @@ router.post('/order', async (req, res) => {
       grandTotal === undefined
     ) {
       return res.status(400).json({
-        message:
-          'Missing required fields'
+        message: 'Missing required fields'
       });
     }
 
-    /* ================= PAYMENT VALIDATION ================= */
     if ((paymentMode === 'gpay' || paymentMode === 'online') && !paymentId) {
       return res.status(400).json({
-        message: 'paymentId is required for online payments'
+        message: 'paymentId required for online payment'
       });
     }
 
-    /* ================= ITEMS VALIDATION ================= */
     if (!Array.isArray(items) || items.length === 0) {
       return res.status(400).json({
         message: 'items must be a non-empty array'
       });
     }
 
-    /* ================= BILL NUMBER GENERATION (GLOBAL) ================= */
+    /* ================= BILL NUMBER ================= */
+
     const counter = await Counter.findOneAndUpdate(
       { name: 'billNumber' },
       { $inc: { seq: 1 } },
       { new: true, upsert: true }
     );
 
-    const billNumber = counter.seq; // 🔥 AUTO INCREMENT
+    const billNumber = counter.seq;
 
     /* ================= SAVE ORDER ================= */
+
     const newOrder = new Order({
       billNumber,
       name,
@@ -367,21 +421,78 @@ router.post('/order', async (req, res) => {
 
     const savedOrder = await newOrder.save();
 
+    /* ================= BUILD PRODUCT LIST ================= */
+
+    const itemsList = items
+      .map(
+        (item) =>
+          `<tr>
+            <td>${item.itemname}</td>
+            <td>${item.quantity}</td>
+            <td>₹${item.price}</td>
+            <td>₹${item.subtotal}</td>
+          </tr>`
+      )
+      .join("");
+
+    /* ================= EMAIL CONTENT ================= */
+
+    const mailOptions = {
+      from: process.env.EMAIL_USER,
+      to: process.env.EMAIL_USER,
+      subject: `New Order Received - Bill #${billNumber}`,
+      html: `
+        <h2>New Order Received</h2>
+
+        <p><b>Bill Number:</b> ${billNumber}</p>
+        <p><b>Name:</b> ${name}</p>
+        <p><b>Mobile:</b> ${mobile}</p>
+        <p><b>City:</b> ${city}</p>
+        <p><b>Address:</b> ${address}</p>
+
+        <h3>Products Ordered</h3>
+
+        <table border="1" cellpadding="6" cellspacing="0">
+          <tr>
+            <th>Product</th>
+            <th>Qty</th>
+            <th>Price</th>
+            <th>Subtotal</th>
+          </tr>
+
+          ${itemsList}
+
+        </table>
+
+        <br>
+
+        <p><b>Total:</b> ₹${total}</p>
+        <p><b>GST:</b> ₹${gstTotal}</p>
+        <p><b>Grand Total:</b> ₹${grandTotal}</p>
+      `
+    };
+
+    await transporter.sendMail(mailOptions);
+
     /* ================= RESPONSE ================= */
+
     res.status(201).json({
       message: 'Order Placed Successfully!',
-      billNumber,          // ✅ FRONTEND + PDF USE
+      billNumber,
       order: savedOrder
     });
 
   } catch (error) {
+
     console.error('Order POST error:', error);
+
     res.status(500).json({
       message: 'Internal Server Error',
       error
     });
   }
 });
+
 
 
 

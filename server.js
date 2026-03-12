@@ -38,12 +38,11 @@ app.use(express.json({ limit: '10mb' }));
 app.use(express.urlencoded({ limit: '10mb', extended: true }));
 
 // Connect to MongoDB
-mongoose.connect(process.env.MONGO_URI, {
-  dbName: "test"
-})
-  .then(() => console.log('MongoDB connected'))
-  .catch((err) => console.error('MongoDB connection error:', err));
+mongoose.connect(process.env.MONGO_URI)
+.then(() => console.log('MongoDB connected'))
+.catch((err) => console.error('MongoDB connection error:', err));
 app.use('/ecomart', routes);
+console.log("🔥 USING URI:", process.env.MONGO_URI);
 
 // Start server on dynamic port
 app.listen(PORT, () => {
