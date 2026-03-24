@@ -120,7 +120,7 @@ router.post('/addpro', async (req, res) => {
 router.post("/products-sync", async (req, res) => {
   try {
 
-    const products = req.body.products;
+    const products = req.body;
 
     const operations = products.map((p) => ({
       updateOne: {
