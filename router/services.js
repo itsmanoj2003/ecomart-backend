@@ -146,7 +146,16 @@ router.post("/products-sync", async (req, res) => {
 
 
 
+// Product Category Get
+router.get("/category/:categoryName", async (req, res) => {
+  const { categoryName } = req.params;
 
+  const products = await ProductModel.find({
+    itemcategory: categoryName
+  });
+
+  res.json(products);
+});
 
 
 
